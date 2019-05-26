@@ -1,0 +1,16 @@
+{
+    "HostConfig": {
+        "Binds": [
+            "/lib/modules/:/lib/modules",
+            "/sys/bus/usb-serial/:/sys/bus/usb-serial/"
+        ],
+        "Privileged": true,
+        "Devices": [
+            {
+                "PathOnHost": "/dev/ttyUSB0",
+                "PathInContainer": "/dev/ttyUSB0",
+                "CgroupPermissions": "mrw"
+            }
+        ]
+    }
+}
