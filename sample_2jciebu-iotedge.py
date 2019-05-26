@@ -3,10 +3,14 @@ import random
 import time
 import sys
 import iothub_client
-from iothub_client import IoTHubClient, IoTHubClientError, IoTHubTransportProvider, IoTHubClientResult
+from iothub_client import IoTHubClient, IoTHubClientError,IoTHubModuleClient, IoTHubTransportProvider, IoTHubClientResult
 from iothub_client import IoTHubMessage, IoTHubMessageDispositionResult, IoTHubError, DeviceMethodReturnValue
 from iothub_client import IoTHubClientRetryPolicy, GetRetryPolicyReturnValue
 from iothub_client_args import get_iothub_opt, OptionError
+
+
+
+
 from datetime import datetime
 
 # LED display rule. Normal Off.
@@ -91,16 +95,36 @@ def connection_status_callback(result, reason, user_context):
     CONNECTION_STATUS_CALLBACKS += 1
     print ( "    Total calls confirmed: %d" % CONNECTION_STATUS_CALLBACKS )
 
+# receive_message_callback is invoked when an incoming message arrives on the specified 
+# input queue (in the case of this sample, "input1").  Because this is a filter module, 
+# we will forward this message onto the "output1" queue.
+def receive_message_callback(message, hubManager):
+    global RECEIVE_CALLBACKS
+    message_buffer = message.get_bytearray()
+    size = len(message_buffer)
+    print ( "    Data: <<<%s>>> & Size=%d" % (message_buffer[:size].decode('utf-8'), size) )
+    map_properties = message.properties()
+    key_value_pair = map_properties.get_internals()
+    print ( "    Properties: %s" % key_value_pair )
+    RECEIVE_CALLBACKS += 1
+    print ( "    Total calls received: %d" % RECEIVE_CALLBACKS )
+    hubManager.forward_event_to_output("outputcommandresponse", message, 0)
+    return IoTHubMessageDispositionResult.ACCEPTED
 
-def device_twin_callback(update_state, payload, user_context):
+
+# module_twin_callback is invoked when the module twin's desired properties are updated.
+def module_twin_callback(update_state, payload, user_context):
     global TWIN_CALLBACKS
-    print ( "")
-    print ( "Twin callback called with:")
-    print ( "updateStatus: %s" % update_state )
-    print ( "context: %s" % user_context )
-    print ( "payload: %s" % payload )
+    global TEMPERATURE_THRESHOLD
+    print ( "\nTwin callback called with:\nupdateStatus = %s\npayload = %s\ncontext = %s" % (update_state, payload, user_context) )
+    data = json.loads(payload)
+    if "desired" in data and "TemperatureThreshold" in data["desired"]:
+        TEMPERATURE_THRESHOLD = data["desired"]["TemperatureThreshold"]
+    if "TemperatureThreshold" in data:
+        TEMPERATURE_THRESHOLD = data["TemperatureThreshold"]
     TWIN_CALLBACKS += 1
     print ( "Total calls confirmed: %d\n" % TWIN_CALLBACKS )
+
 
 
 def send_reported_state_callback(status_code, user_context):
@@ -111,7 +135,7 @@ def send_reported_state_callback(status_code, user_context):
     print ( "    Total calls confirmed: %d" % SEND_REPORTED_STATE_CALLBACKS )
 
 
-def device_method_callback(method_name, payload, user_context):
+def module_method_callback(method_name, payload, user_context):
     global METHOD_CALLBACKS
     print ( "\nMethod callback called with:\nmethodName = %s\npayload = %s\ncontext = %s" % (method_name, payload, user_context) )
     METHOD_CALLBACKS += 1
@@ -124,10 +148,10 @@ def device_method_callback(method_name, payload, user_context):
 
 # for IoT Edge Runtime 
 class HubManager(object):
-
     def __init__(
             self,
             protocol):
+        print ("Initializing IoT Ede Module Client...")
         self.client_protocol = protocol
         self.client = IoTHubModuleClient()
         self.client.create_from_environment(protocol)
@@ -135,8 +159,11 @@ class HubManager(object):
         self.client.set_option("messageTimeout", MESSAGE_TIMEOUT)
         # set to increase logging level
         # self.client.set_option("logtrace", 1)
-        self.client.set_device_twin_callback(device_twin_callback, self)
-        self.client.set_device_method_callback(device_method_callback,self)
+        self.client.set_message_callback("inputcommand", receive_message_callback, self)
+
+        # Sets the callback when a module twin's desired properties are updated.
+        self.client.set_module_twin_callback(module_twin_callback, self)
+        self.client.set_module_method_callback(module_method_callback,self)
         
 
 
@@ -156,42 +183,9 @@ class HubManager(object):
     def send_reported_state(self, reported_state, size, reported_context ):
         self.client.send_reported_state(reported_state, size,send_reported_state_callback , reported_context)
 
-
-def iothub_client_init():
-    # prepare iothub client
-    client = IoTHubClient(CONNECTION_STRING, PROTOCOL)
-    if client.protocol == IoTHubTransportProvider.HTTP:
-        client.set_option("timeout", TIMEOUT)
-        client.set_option("MinimumPollingTime", MINIMUM_POLLING_TIME)
-    # set the time until a message times out
-    client.set_option("messageTimeout", MESSAGE_TIMEOUT)
-    # some embedded platforms need certificate information
-    set_certificates(client)
-    # to enable MQTT logging set to 1
-    if client.protocol == IoTHubTransportProvider.MQTT:
-        client.set_option("logtrace", 0)
-    client.set_message_callback(
-        receive_message_callback, RECEIVE_CONTEXT)
-    if client.protocol == IoTHubTransportProvider.MQTT or client.protocol == IoTHubTransportProvider.MQTT_WS:
-        client.set_device_twin_callback(
-            device_twin_callback, TWIN_CONTEXT)
-        client.set_device_method_callback(
-            device_method_callback, METHOD_CONTEXT)
-    if client.protocol == IoTHubTransportProvider.AMQP or client.protocol == IoTHubTransportProvider.AMQP_WS:
-        client.set_connection_status_callback(
-            connection_status_callback, CONNECTION_STATUS_CONTEXT)
-
-    retryPolicy = IoTHubClientRetryPolicy.RETRY_INTERVAL
-    retryInterval = 100
-    client.set_retry_policy(retryPolicy, retryInterval)
-    print ( "SetRetryPolicy to: retryPolicy = %d" %  retryPolicy)
-    print ( "SetRetryPolicy to: retryTimeoutLimitInSeconds = %d" %  retryInterval)
-    retryPolicyReturn = client.get_retry_policy()
-    print ( "GetRetryPolicy returned: retryPolicy = %d" %  retryPolicyReturn.retryPolicy)
-    print ( "GetRetryPolicy returned: retryTimeoutLimitInSeconds = %d" %  retryPolicyReturn.retryTimeoutLimitInSeconds)
-
-    return client
-
+    def forward_event_to_output(self, outputQueueName, event, send_context):
+        self.client.send_event_async(
+            outputQueueName, event, send_confirmation_callback, send_context)
 
 
 def calc_crc(buf, length):
@@ -291,7 +285,7 @@ if __name__ == '__main__':
         # IoT Hub Connection
      #   client = iothub_client_init()
 
-        hub_manager = HubManager("mgtt")
+        hub_manager = HubManager(IoTHubTransportProvider.MQTT)
 
         reported_state = "{\"newState\":\"standBy\"}"
         hub_manager.send_reported_state(reported_state, len(reported_state), SEND_REPORTED_STATE_CONTEXT)
@@ -313,7 +307,8 @@ if __name__ == '__main__':
             message = print_latest_data(data)
             iot_message = IoTHubMessage(message)
             print("Create IoT Hub Message with : "+message)
-            hub_manager.send_event_async(iot_message, send_confirmation_callback, MESSAGE_COUNT)
+            msg_properties = {}
+            hub_manager.send_event_to_output("sensoroutput", iot_message, msg_properties, MESSAGE_COUNT)
             MESSAGE_COUNT = MESSAGE_COUNT + 1
             
             time.sleep(1)
