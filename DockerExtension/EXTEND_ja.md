@@ -42,7 +42,7 @@ CONNECTION_STRING = "[Device Connection String]"
 ### Docker Image のビルド 
 実行用のDocker Imageを作ります。
 ```shell
-$ sudo docker build -f raspberrypi-iotsdk.Dockerfile -t omronsensor .
+$ sudo docker build -f DockerExtension/raspberrypi-iotsdk.Dockerfile -t omronsensor .
 ```
 これで、ローカルの Docker Hub 内に omronsensor という名前でDocker Image が作られます。
 
@@ -55,3 +55,26 @@ $ sudo docker run --device=/dev/ttyUSB0:/dev/ttyUSB0 -v /sys/bus/usb-serial/:/sy
 ### センサーデータ取得とデータ送信の確認 
 Docker Imageを起動したシェル上で、USB から取得したデータの表示が行われます。 
 Azure IoT Hubへのデータ送信確認は、Device Explorer等を使ってください。使い方は、[こちら](https://github.com/Azure/azure-iot-sdk-csharp/tree/master/tools/DeviceExplorer)を参考にしてください。
+
+## Azure IoT Edge Module 対応 
+Azure IoT Edge Runtime上で実行可能なImageを作ります。
+```shell
+$ sudo docker build -f DockerExtension/raspberrypi-iotedge.Dockerfile -t omronusbsensor .
+```
+これで、ローカルの Docker Hub 内に omronusbsensor という名前でIoT Edge 用Docker Image が作られます。 
+できたImageをタグ付けして、Internet を介してアクセス可能な Docker Hub にプッシュします。 
+```shell
+$ sudo docker tag omronusbsensor public-docker-hub/omronusbsensor:1.0.0-arm32v7 
+$ sudo docker push public-doncker-hub/omronusbsensor:1.0.0-arm32v7
+```
+これで準備完了です。<i>public-docker-hub</i>の部分は、ACRやDockerのURLです。<i>1.0.0-armv7</i>の部分は好みで構いません。 
+個別のデバイスの IoT Edge への配置は、[IoT Edge への配置](https://docs.microsoft.com/ja-jp/azure/iot-edge/quickstart-linux) を参考にしてください。 
+出力は、"sensorout" です。 
+
+※ 現状、USBデバイスの初期化処理は含んでいないので、Raspberry Pi 電源オン時に、
+```shell
+$ sudo systemctl stop iotedge 
+$ ./device-initialization.sh 
+$ sudo systemctl start iotedge
+```
+が必要です。
