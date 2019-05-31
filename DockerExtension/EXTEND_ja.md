@@ -70,6 +70,7 @@ $ sudo docker push public-doncker-hub/omronusbsensor:1.0.0-arm32v7
 これで準備完了です。<i>public-docker-hub</i>の部分は、ACRやDockerのURLです。<i>1.0.0-armv7</i>の部分は好みで構いません。 
 個別のデバイスの IoT Edge への配置は、[IoT Edge への配置](https://docs.microsoft.com/ja-jp/azure/iot-edge/quickstart-linux) を参考にしてください。 
 出力は、"sensorout" です。 
+Azure Portal で、このモジュールを登録する場合は、[iotedge-module-creation-config.json](./iotedge-module-creation-config.json)を、コンテナーの作成オプションに追加します。 
 
 ※ 現状、USBデバイスの初期化処理は含んでいないので、Raspberry Pi 電源オン時に、
 ```shell
@@ -77,4 +78,27 @@ $ sudo systemctl stop iotedge
 $ ./device-initialization.sh 
 $ sudo systemctl start iotedge
 ```
-が必要です。
+が必要です。 
+
+## おまけ 
+このモジュールがIoT Edge Runtimeに対して送信するセンサー読み取り結果に対して、例えば、Azure Stream Analytics on Edgeモジュールを適用できます。 
+Azure Portal上で、Azure Stream Analytics on Edgeを作成し、
+- 入力 ： EdgeHubInput 
+― 出力 ： EdgeHubOutput 
+と定義して、クエリーを 
+```sql
+with discomfortIndexValue as (
+    select *, 0.81 * temperature + 0.01 * humidity * (0.99 * temperature - 14.3) + 46.3 as discomfortIndex
+    FROM [EdgeHubInput]
+)
+SELECT
+    measured_time,
+        AnomalyDetection_SpikeAndDip(CAST(discomfortIndex AS float), 80, 120, 'spikes')
+        OVER(LIMIT DURATION(second, 120)) AS SpikeAndDipScores
+INTO
+    [EdgeHubOutput]
+FROM
+    discomfortIndexValue
+``` 
+
+と定義して、IoT Edge にデプロイします。このクエリーはビルトイン関数のAnormaly Detection（簡単なAI）を使っているので、これだけで、センサーが計測した、温度と湿度を元に、不快指数を計測し、例えば、おやじがセンサーに吐息を吹きかけた様な、異常状態を検知し、IoT Hub に通知を送ることができます。 
