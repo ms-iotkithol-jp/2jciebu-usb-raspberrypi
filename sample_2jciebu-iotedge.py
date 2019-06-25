@@ -264,7 +264,7 @@ def print_latest_data(data):
     print("SI value flag:" + si_value_flag)
     print("PGA flag:" + pga_flag)
     print("Seismic intensity flag:" + seismic_intensity_flag)
-    TEXT_MESSAGE_TO_IOTHUB = MSG_TXT % (time_measured, barometric_pressure, temperature, relative_humidity)
+    TEXT_MESSAGE_TO_IOTHUB = MSG_TXT % (time_measured, barometric_pressure, temperature, relative_humidity, ambient_light,sound_noise,eco2_flag)
     print("Send to be ...:" + TEXT_MESSAGE_TO_IOTHUB)
     return TEXT_MESSAGE_TO_IOTHUB
 
@@ -274,7 +274,7 @@ def now_utc_str():
     """
     return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-MSG_TXT = "{\"measured_time\": \"%s\", \"Barometric\": %s,\"temperature\": %s,\"humidity\": %s}"
+MSG_TXT = "{\"measured_time\": \"%s\", \"barometric\": %s,\"temperature\": %s,\"humidity\": %s,\"ambient\": %s, \"noise\": %s, \"co2\": %s}"
 
 if __name__ == '__main__':
 
