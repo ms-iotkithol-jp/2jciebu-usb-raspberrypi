@@ -102,3 +102,142 @@ FROM
 ``` 
 
 と定義して、IoT Edge にデプロイします。このクエリーはビルトイン関数のAnormaly Detection（簡単なAI）を使っているので、これだけで、センサーが計測した、温度と湿度を元に、不快指数を計測し、例えば、おやじがセンサーに吐息を吹きかけた様な、異常状態を検知し、IoT Hub に通知を送ることができます。 
+
+## さらにおまけ 
+クラウド側で、Stream Analytics on Edge のAnomaly Detectionで検知した異常状態を、Stream Analytics（クラウド側）で抽出したいときには、IoT Hubをdeviceという名前で入力定義し、抽出結果をEvent Hub（出力名はanomalydetect）とした場合、 
+```sql
+SELECT * INTO rawdata FROM device
+SELECT * INTO anomalydetect FROM device
+    WHERE spikeanddipscores.IsAnomaly = 1
+```
+なんてすれば、異常状態を検知したときだけ、Event Hubにデータを全部流すことができる。  
+
+## ついでにおまけ 
+USB Sensorからのデータ取得とStream Analytics on Edgeのおまけをさくっと、VS Codeで動かしたい場合は、以下のdeployment.template.jsonを使えばよいよ 
+```json
+{
+  "$schema-template": "2.0.0",
+  "modulesContent": {
+    "$edgeAgent": {
+      "properties.desired": {
+        "schemaVersion": "1.0",
+        "runtime": {
+          "type": "docker",
+          "settings": {
+            "minDockerVersion": "v1.25",
+            "loggingOptions": "",
+            "registryCredentials": {
+              "docker": {
+                "username": "$CONTAINER_REGISTRY_USERNAME_docker",
+                "password": "$CONTAINER_REGISTRY_PASSWORD_docker",
+                "address": "docker.io"
+              }
+            }
+          }
+        },
+        "systemModules": {
+          "edgeAgent": {
+            "type": "docker",
+            "settings": {
+              "image": "mcr.microsoft.com/azureiotedge-agent:1.0",
+              "createOptions": {}
+            }
+          },
+          "edgeHub": {
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "settings": {
+              "image": "mcr.microsoft.com/azureiotedge-hub:1.0",
+              "createOptions": {
+                "HostConfig": {
+                  "PortBindings": {
+                    "5671/tcp": [
+                      {
+                        "HostPort": "5671"
+                      }
+                    ],
+                    "8883/tcp": [
+                      {
+                        "HostPort": "8883"
+                      }
+                    ],
+                    "443/tcp": [
+                      {
+                        "HostPort": "443"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "modules": {
+          "usb-sensor-module": {
+            "version": "1.0",
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "settings": {
+              "image": "embeddedgeorge/omron-usb-sensor:0.1.1-arm32v7",
+              "createOptions": {
+                "HostConfig":{
+                  "Binds":[
+                    "/lib/modules/:/lib/modules",
+                    "/sys/bus/usb-serial/:/sys/bus/usb-serial/"
+                  ],
+                  "Devices":[
+                    {"PathOnHost":"/dev/ttyUSB0"},
+                    {"PathInContainer":"/dev/ttyUSB0"},
+                    {"CgroupPermissions":"mrw"}
+                  ],
+                  "Privileged":true
+                }
+              }
+            }
+          },
+          "anomaly-detect":{
+            "version": "1.0",
+            "type": "docker",
+            "status": "running",
+            "restartPolicy": "always",
+            "settings": {
+              "image": "mcr.microsoft.com/azure-stream-analytics/azureiotedge:1.0.2",
+              "createOptions": ""
+            },
+            "env": {
+              "PlanId": {
+                  "value": "stream-analytics-on-iot-edge"
+              }
+            }
+          }
+        }
+      }
+    },
+    "$edgeHub": {
+      "properties.desired": {
+        "schemaVersion": "1.0",
+        "routes": {
+          "sensorToAsa": "FROM /messages/modules/usb-sensor-module/outputs/sensoroutput INTO BrokeredEndpoint(\"/modules/anomaly-detect/inputs/EdgeHubInput\")",          "UsbSensorModuleToIoTHub": "FROM /messages/modules/UsbSensorModule/outputs/* INTO $upstream",
+          "UploadToIoTHub": "FROM /messages/modules/* INTO $upstream"
+        },
+        "storeAndForwardConfiguration": {
+          "timeToLiveSecs": 7200
+        }
+      }
+    },
+    "usb-sensor-module":{
+      "properties.desired": {}
+    },
+    "anomaly-detect":{
+      "properties.desired": {
+        "ASAJobInfo": "https://egohtaiwan20180320.blob.core.windows.net/asa-on-edge/ASAEdgeJobs/a85e1cbe-e71d-4678-baee-acb30acd9789/ef376992-c67c-4ac1-876a-b8ed6585c905/ASAEdgeJobDefinition.zip?sv=2018-03-28&sr=b&sig=oMQXk6owBgrIVODGvXIB2%2FaaMm1%2BwAP2OeOJaP%2Fxr9M%3D&st=2019-05-26T14%3A15%3A00Z&se=2022-05-26T14%3A25%3A00Z&sp=r",
+        "ASAJobResourceId": "/subscriptions/d685a1cf-9bbd-4a90-8321-ac54287fb087/resourceGroups/IoTOpenHackTaiwan/providers/Microsoft.StreamAnalytics/streamingjobs/AnomalyDetect",
+        "ASAJobEtag": "d5221f72-8dbc-4670-82fe-36e129f1882b",
+        "PublishTimestamp": "5/26/2019 2:25:00 PM"
+      }
+    }
+  }
+}
+```
