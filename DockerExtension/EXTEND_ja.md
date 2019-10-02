@@ -78,7 +78,8 @@ $ sudo systemctl stop iotedge
 $ ./device-initialization.sh 
 $ sudo systemctl start iotedge
 ```
-が必要です。 
+が必要です。  
+※毎回起動時にこれを実行するのがかったるい！って方は、[device-initialization.sh](device-initialization.sh)を、/etc/iotedgeにコピーして、sudo chmod a+x /etc/iotedge/device-initialization.shで権限変えて、/etc/rc.localのexit 0の前の行にこのスクリプトを実行するコマンド（スクリプトのフルパス）を追加すればOK
 
 ## おまけ 
 このモジュールがIoT Edge Runtimeに対して送信するセンサー読み取り結果に対して、例えば、Azure Stream Analytics on Edgeモジュールを適用できます。 
